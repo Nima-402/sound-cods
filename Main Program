@@ -1,0 +1,140 @@
+import keyboard
+import sounddevice
+import numpy
+import scipy.fftpack
+import os
+
+CodeTimes=0.1
+def Send(S):
+    fs=44100
+    Owave=[]
+    for i in S:
+        print(coder(i))
+        for u in coder(i):
+            Owave.append(makeSB(u))
+    Fwave=numpy.concatenate(Owave)
+    with sounddevice.OutputStream(samplerate=fs,channels=1,dtype='int16') as stream:stream.write(Fwave)
+def makeSB(TF):
+    fs=44100
+    dr=CodeTimes
+    bs=((float(8000)*float(TF))+500)
+    fr=bs
+
+    t=numpy.linspace(0,dr,int(fs*dr),endpoint=False)
+    wave=0.5 *numpy.sin(2*numpy.pi*fr*t)
+    wave=(wave*32767).astype(numpy.int16)
+    return wave
+
+
+
+def coder(c):
+    code_base=[0,1,0,1,0,0,1,0]
+    code=[]
+    s=''
+    o=int(ord(c))
+    
+    while(True):
+        if o%2==0:
+            s=s+'0'
+        else:
+            s=s+'1'
+            o=o-1
+        o=o/2
+        if o==0:
+            break
+    s=s[::-1]
+    s=(8-len(s))*'0'+s
+    for i in range(8):
+        code.append(code_base[i])
+        code.append(s[i])
+    return code
+
+
+def bigest(A,B):
+    if A>B:
+        return A
+    elif A<=B:
+        return B
+def lesst(A,B):
+    if A>B:
+        return B
+    elif A<=B:
+        return A
+
+
+blockSize=1024
+stealTime=0
+BF=-1
+ud=[]
+counter=0
+def IcallBack(indata,frames,time,status):
+    global stealTime
+    global BF
+    global counter
+    if status:
+        print(status)
+        return
+    audio_data=indata[:,0]
+    fft_S=numpy.fft.rfft(audio_data)
+    freqs = numpy.fft.rfftfreq(len(audio_data),d=1/44100)
+    MainFr=freqs[numpy.argmax(numpy.abs(fft_S))]
+    if(4250<MainFr):
+        ud.append(1)
+        #print(1)
+    else:
+        ud.append(0)
+        #print(0)
+    
+    scanA=[]
+    if len(ud)>(CodeTimes*16)*(44100/blockSize):
+        scanA=[ud[int(round(i*(CodeTimes*(44100/blockSize))))] for i in range(16)]
+    
+    code_base=[0,1,0,1,0,0,1,0]
+    ecode=[scanA[i] for i in range(len(scanA)) if i%2==0]
+    #print(str(scanA)+"  "+str(code_base))
+    #print(str(ecode)+"   "+str(code_base))
+    if(ecode==code_base):
+        #print('code base is set')
+        counter+=1
+    else:
+        counter-=1
+    if(counter<0):
+        counter=0
+    if(counter>((44100/blockSize)*CodeTimes)*0.5):
+        bin=[scanA[i] for i in range(len(scanA)) if i%2!=0]
+        bits=''.join(map(str,bin))
+        print(chr(int(bits,2)),end='')
+        counter=0
+    if(len(ud)>(CodeTimes*16)*(44100/blockSize)):
+        ud.remove(ud[0])
+    BF=MainFr
+
+
+
+def file_to_ascii(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+            ascii_codes = [ord(char) for char in content]
+            return ascii_codes
+    except FileNotFoundError:
+        print("file not found")
+        return []
+
+
+def ascii_to_file(ascii_codes, output_file_path):
+    try:
+        text = ''.join([chr(code) for code in ascii_codes])
+        with open(output_file_path, 'w', encoding='utf-8') as file:
+            file.write(text)
+            print("sucssec")
+    except Exception as e:
+        print(f"Error {e}")
+T = input("S for Send Or R for Receive : ")
+if T=='S':
+    while True:
+            Send(input("Your message:"))
+elif T=='R':
+    stream = sounddevice.InputStream(samplerate=44100,channels=1,blocksize=blockSize,dtype=numpy.float32,callback=IcallBack)
+    stream.start()
+    input('Receive:')
